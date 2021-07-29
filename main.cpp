@@ -3,13 +3,10 @@
 #include "ethhdr.h"
 #include "arphdr.h"
 #include <sys/socket.h>
-#include <arpa/inet.h>
-#include <sys/ioctl.h>
-#include <netinet/in.h>
-//#include <net/if.h>
-//#include <net/if_arp.h>
-#include <sys/types.h>
+#include <netinet/if_ether.h>
 #include <libnet.h>
+
+#define SIZE_ETHERNET 14
 
 #pragma pack(push, 1)
 struct EthArpPacket final {
@@ -26,7 +23,7 @@ void sendPacket(pcap_t* handle, EthArpPacket packet);
 void sendArp(pcap_t* handle, char* senderIp, char* senderMac,char* targetIp, char* myMac);
 
 
-///////////     MAIN     /////////////
+///////////     MAIN     //////////////////
 int main(int argc, char* argv[]) {
 	
 	if (argc < 4 || argc%2 != 0) {
@@ -65,7 +62,11 @@ int main(int argc, char* argv[]) {
 	
 	pcap_close(handle);
 
-}/////////		END MAIN		//////////
+}
+/////////		END MAIN		/////////////////
+
+
+
 
 void usage() {
 	printf("syntax : send-arp <interface> <sender ip> <target ip> [<sender ip 2> <target ip 2> ...]\n");
@@ -132,23 +133,38 @@ void leakSenderMac(pcap_t* handler,char* myIp,char* myMac,char* senderIp , char*
 
 	while(1)
 	{
+		//puts("Plz wait....");
 		res = pcap_next_ex(handler, &replyPacketr, &pkt_data);
-		
+
 		if (res == 0){
 			printf("res == 0");
-			return;
+			continue;
 			}
 		if (res == PCAP_ERROR || res == PCAP_ERROR_BREAK) {
 			printf("pcap_next_ex return %d(%s)\n", res, pcap_geterr(handler));
-			return;
+			exit(-1);
 			}
+
 		eth = (struct libnet_ethernet_hdr *)pkt_data;
-		if(ntohs(eth->ether_type) == ETHERTYPE_ARP) //  ETHERTYPE_ARP = 0x806
-			break;
+
+		if(ntohs(eth->ether_type) == ETHERTYPE_ARP){ 	//  ETHERTYPE_ARP = 0x806
+			struct ether_arp* arp = (struct ether_arp*)(pkt_data+SIZE_ETHERNET);
+			char recv_sip[16] = {0};
+			sprintf(recv_sip,"%d.%d.%d.%d",arp->arp_spa[0],arp->arp_spa[1],arp->arp_spa[2],arp->arp_spa[3]);
+			//puts(recv_sip);
+			if(strcmp(recv_sip, senderIp) == 0)
+				break;
+			else {
+				sendPacket(handler, packet);
+				puts("[Searching for sender ip]arp reply packet not found... plz wait..");
+			}
+				
+		}
+		
 
 	}
 	
-
+	
 	mac_addr = (u_int8_t*)eth->ether_shost;
 	sprintf(senderMac,"%02x:%02x:%02x:%02x:%02x:%02x",mac_addr[0],mac_addr[1],mac_addr[2],mac_addr[3],mac_addr[4],mac_addr[5]);
  
